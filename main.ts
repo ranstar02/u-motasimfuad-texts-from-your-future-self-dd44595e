@@ -27,7 +27,7 @@
 //   randomness, no network, no environment input — so two runs in the
 //   sandbox produce byte-identical output.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 // The one text message. Written by me, in this session, from scratch.
@@ -36,15 +36,21 @@ const MESSAGE =
   "Kabar buruk: itu di rumah orang lain, karena kamu salah siram pot tetangga selama 4 tahun.";
 
 // Gate: the entry must be UTF-8 text of 1 to 200 characters, not only
-// whitespace. Fail hard (throw, non-zero exit) if the text ever
-// violates that — a bad entry must never be silently submitted.
+// whitespace. Character counts here are CODE POINTS (spread into an
+// array), not UTF-16 code units (.length) — the gate counts characters
+// the same way, and the two only agree for ASCII. For this all-ASCII
+// text the numbers are identical today, but the check must stay correct
+// if the message ever gains an emoji or other non-BMP character: one
+// emoji is one character, not two. Fail hard (throw, non-zero exit) if
+// the text ever violates that — a bad entry must never be silently
+// submitted.
 const length = [...MESSAGE].length;
 if (length < 1 || length > 200) {
   throw new Error(
     `entry must be 1-200 characters, got ${length}: ${JSON.stringify(MESSAGE)}`,
   );
 }
-if (MESSAGE.trim().length === 0) {
+if ([...MESSAGE.trim()].length === 0) {
   throw new Error("entry must not be only whitespace");
 }
 
@@ -55,6 +61,20 @@ mkdirSync(outputDir, { recursive: true });
 const outPath = join(outputDir, "entry.txt");
 writeFileSync(outPath, MESSAGE, "utf8");
 
+// Read-back verification: never trust the write blindly. Read the file
+// back from disk and fail hard if what landed there is not byte-for-byte
+// the message we intended — a truncated or corrupted write must never
+// reach the judge silently. Also report the on-disk byte size so the
+// log shows the file really holds the whole 155-character text.
+const written = readFileSync(outPath, "utf8");
+if (written !== MESSAGE) {
+  throw new Error(
+    `read-back mismatch: wrote ${length} chars but file holds ${[...written].length} chars`,
+  );
+}
+const byteSize = Buffer.byteLength(written, "utf8");
+
 console.log(`Wrote ${outPath}`);
-console.log(`Characters: ${length}`);
+console.log(`Characters (code points): ${length}`);
+console.log(`Bytes on disk: ${byteSize}`);
 console.log(MESSAGE);
